@@ -24,5 +24,6 @@ export function ruleSettings(s: Settings) {
 }
 
 export function appUrl(path = ""): string {
-  return `${(process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}${path}`;
+  const base = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || "http://localhost:3000";
+  return `${base.replace(/\/$/, "")}${path}`;
 }

@@ -25,5 +25,5 @@ COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/node_modules ./node_modules
 USER app
 EXPOSE 3000
-# Migrationen anwenden, dann Server starten
-CMD ["sh", "-c", "npx prisma migrate deploy && node server.js"]
+# Migrationen anwenden, optional Seed (SEED_ON_START=true, idempotent), dann Server starten
+CMD ["sh", "-c", "npx prisma migrate deploy && if [ \"$SEED_ON_START\" = \"true\" ]; then npx tsx prisma/seed.ts; fi && node server.js"]

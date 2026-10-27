@@ -73,7 +73,12 @@ async function main() {
   for (const [firstName, lastName, employmentType, targetHours, obj, role] of people) {
     i++;
     const pnr = `SD${String(i).padStart(3, "0")}`;
-    const email = `${firstName}.${lastName}`.toLowerCase().replace(/ü/g, "ue").replace(/ö/g, "oe").replace(/ä/g, "ae") + "@example.de";
+    // SEED_DEMO_EMAIL_BASE=name@gmail.com -> name+max@gmail.com (alle Test-Mails landen im eigenen Postfach)
+    const base = process.env.SEED_DEMO_EMAIL_BASE?.trim().toLowerCase();
+    const slug = firstName.toLowerCase().replace(/ü/g, "ue").replace(/ö/g, "oe").replace(/ä/g, "ae").replace(/[^a-z]/g, "");
+    const email = base?.includes("@")
+      ? `${base.split("@")[0]}+${slug}@${base.split("@")[1]}`
+      : `${firstName}.${lastName}`.toLowerCase().replace(/ü/g, "ue").replace(/ö/g, "oe").replace(/ä/g, "ae") + "@example.de";
     if (await prisma.employee.findUnique({ where: { personnelNumber: pnr } })) continue;
     const user = await prisma.user.upsert({ where: { email }, update: {}, create: { email, role: role ?? "EMPLOYEE", passwordHash: hash } });
     const e = await prisma.employee.create({
@@ -114,7 +119,7 @@ async function main() {
       },
     });
   }
-  console.log("Demo-Mitarbeiter: Passwort 'Demo2026pass' (z. B. max.mueller@example.de, Schichtleiterin sabine.wagner@example.de)");
+  console.log("Demo-Mitarbeiter angelegt – Passwort 'Demo2026pass'");
 }
 
 main()

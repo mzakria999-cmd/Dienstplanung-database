@@ -1,0 +1,57 @@
+# Render Blueprint – Ein-Klick-Testumgebung (Frankfurt):
+# https://render.com/deploy?repo=https://github.com/mzakria999-cmd/Dienstplanung-database
+services:
+  - type: web
+    name: dienstplanung
+    runtime: docker
+    plan: free
+    region: frankfurt
+    healthCheckPath: /login
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dienstplanung-db
+          property: connectionString
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: DATA_ENCRYPTION_KEY
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      - key: AUTH_TRUST_HOST
+        value: "true"
+      - key: REQUIRE_ADMIN_2FA
+        value: "false"
+      - key: INTERNAL_CRON
+        value: "true"
+      - key: SEED_ON_START
+        value: "true"
+      - key: SEED_DEMO
+        value: "true"
+      - key: SEED_COMPANY
+        value: "SecurityDienst Test GmbH"
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      - key: SEED_DEMO_EMAIL_BASE
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+
+databases:
+  - name: dienstplanung-db
+    plan: free
+    region: frankfurt
+    databaseName: sdm
+    user: sdm

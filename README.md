@@ -22,7 +22,7 @@ Demo-Mitarbeiter: z. B. `max.mueller@example.de`, Schichtleiterin `sabine.wagner
 
 ### Auf einem Server (Produktion)
 
-Schritt-für-Schritt-Anleitung mit automatischem HTTPS: **[DEPLOY.md](DEPLOY.md)**.
+Schritt-für-Schritt-Anleitung mit automatischem HTTPS: **[DEPLOY.md](DEPLOY.md)** – inkl. Ein-Klick-Testumgebung auf Render.com (`render.yaml`).
 
 ### Mit Docker
 
