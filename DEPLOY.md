@@ -41,8 +41,7 @@ In `nano` anpassen (speichern: Strg+O, Enter, Strg+X):
 ## 5. Starten
 ```bash
 docker compose up -d --build                         # erster Start dauert ca. 5 Minuten
-SEED_ADMIN_EMAIL=chef@ihre-firma.de SEED_ADMIN_PASSWORD='SicheresPasswort2026' \
-  docker compose exec -e SEED_ADMIN_EMAIL -e SEED_ADMIN_PASSWORD app npx tsx prisma/seed.ts
+docker compose exec -e SEED_ADMIN_EMAIL=chef@ihre-firma.de -e SEED_ADMIN_PASSWORD='SicheresPasswort2026' app npx tsx prisma/seed.ts
 ```
 Jetzt `https://dienstplan.ihre-firma.de` öffnen, mit der Admin-E-Mail anmelden und die
 **Zwei-Faktor-Authentifizierung** einrichten (Pflicht für Administratoren). Danach unter *Einstellungen*
