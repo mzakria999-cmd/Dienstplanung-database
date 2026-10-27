@@ -1,6 +1,18 @@
-# Lokaler/Server-Betrieb: docker compose up -d
-# Produktiv: vor die App einen TLS-Reverse-Proxy (Caddy/Traefik/nginx) setzen – siehe README.
+# Server-Betrieb: docker compose up -d --build
+# Caddy holt automatisch ein Let's-Encrypt-Zertifikat für DOMAIN (aus .env) und leitet HTTPS an die App weiter.
 services:
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [app]
+
   db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -20,7 +32,8 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://sdm:${POSTGRES_PASSWORD:-sdm-change-me}@db:5432/sdm?schema=public
-    ports: ["3000:3000"]
+    # nur lokal erreichbar – von außen ausschließlich über Caddy (HTTPS)
+    ports: ["127.0.0.1:3000:3000"]
     depends_on:
       db: { condition: service_healthy }
 
@@ -52,3 +65,5 @@ services:
 
 volumes:
   dbdata:
+  caddy_data:
+  caddy_config:

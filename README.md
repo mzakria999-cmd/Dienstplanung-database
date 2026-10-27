@@ -20,6 +20,10 @@ npm run worker                    # Hintergrundjobs (separates Terminal)
 Standard-Login nach dem Seed: `admin@securitydienst.local` / `Admin2026sicher` – das Passwort muss beim ersten Login geändert werden, danach ist (bei `REQUIRE_ADMIN_2FA=true`) die 2FA-Einrichtung Pflicht. Eigene Zugangsdaten: `SEED_ADMIN_EMAIL=… SEED_ADMIN_PASSWORD=… npm run db:seed`.
 Demo-Mitarbeiter: z. B. `max.mueller@example.de`, Schichtleiterin `sabine.wagner@example.de`, Passwort `Demo2026pass`.
 
+### Auf einem Server (Produktion)
+
+Schritt-für-Schritt-Anleitung mit automatischem HTTPS: **[DEPLOY.md](DEPLOY.md)**.
+
 ### Mit Docker
 
 ```bash
@@ -49,7 +53,7 @@ docker compose --profile dev up -d mailpit                      # optional: E-Ma
 
 - **Hintergrundjobs** (`npm run worker` oder Cron/K8s-CronJob, minütlich `POST /api/cron` mit `Authorization: Bearer $CRON_SECRET`): geplante Mitteilungen, Dienst-Erinnerungen (X h vorher), E-Mail-Wiederholung, nächtliche DSGVO-Löschfristen.
 - **Backups:** `scripts/backup.sh` (pg_dump + gzip, optional GPG-verschlüsselt, Aufbewahrung `BACKUP_KEEP_DAYS`), im Compose-Setup täglich automatisch. Wiederherstellung: `gunzip -c backups/sdm_<datum>.sql.gz | psql "$DATABASE_URL"`.
-- **HTTPS:** App hinter einen TLS-Reverse-Proxy stellen (z. B. Caddy: `dienstplan.firma.de { reverse_proxy app:3000 }`). HSTS u. a. Sicherheits-Header setzt die App selbst.
+- **HTTPS:** im Compose-Setup enthalten – Caddy holt automatisch ein Let's-Encrypt-Zertifikat für `DOMAIN`. Die App selbst ist nur lokal (127.0.0.1:3000) erreichbar. HSTS u. a. Sicherheits-Header setzt die App selbst.
 - **EU-Hosting:** z. B. Hetzner, IONOS, OVH, STACKIT (App + PostgreSQL in DE); Resend mit EU-Region oder SMTP eines deutschen Anbieters. Festplattenverschlüsselung der DB ist Aufgabe des Hostings.
 
 ## Funktionsumfang (alle Phasen umgesetzt)
