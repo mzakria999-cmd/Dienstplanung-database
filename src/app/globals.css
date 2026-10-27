@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+html, body { background: #f8fafc; color: #0f172a; }
+body { -webkit-font-smoothing: antialiased; }
+* { -webkit-tap-highlight-color: transparent; }
+
+@layer components {
+  .page-title { @apply text-2xl font-bold tracking-tight text-slate-900; }
+  .muted { @apply text-sm text-slate-500; }
+  .grid-cell { @apply h-9 min-w-[2.6rem] border-b border-r border-slate-100 p-0.5 text-center align-middle; }
+  .changed-ring { box-shadow: inset 0 0 0 2px #dc2626; }
+}
+
+@media print {
+  aside, header, .no-print { display: none !important; }
+  main { padding: 0 !important; }
+}

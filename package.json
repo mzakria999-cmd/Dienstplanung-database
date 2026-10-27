@@ -1,0 +1,61 @@
+{
+  "name": "securitydienst-manager-pro",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SecurityDienst Manager Pro – Dienstplanung & Mitarbeiterverwaltung für Sicherheitsdienste",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "prisma migrate reset --force",
+    "worker": "tsx scripts/worker.ts",
+    "backup": "bash scripts/backup.sh",
+    "vapid": "web-push generate-vapid-keys"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "@react-pdf/renderer": "4.9.0",
+    "bcryptjs": "3.0.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "exceljs": "4.4.0",
+    "lucide-react": "0.468.0",
+    "next": "15.5.28",
+    "next-auth": "5.0.0-beta.32",
+    "nodemailer": "7.0.9",
+    "otplib": "12.0.1",
+    "qrcode": "1.5.4",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "server-only": "^0.0.1",
+    "tailwind-merge": "2.6.0",
+    "web-push": "3.6.7",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "@types/nodemailer": "6.4.17",
+    "@types/qrcode": "1.5.5",
+    "@types/react": "19.1.10",
+    "@types/react-dom": "19.1.7",
+    "@types/web-push": "3.6.4",
+    "autoprefixer": "10.4.20",
+    "postcss": "8.4.49",
+    "prisma": "6.19.3",
+    "smtp-server": "3.13.6",
+    "tailwindcss": "3.4.17",
+    "tsx": "4.19.2",
+    "typescript": "5.7.2",
+    "vitest": "3.2.4"
+  }
+}

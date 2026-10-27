@@ -1,0 +1,678 @@
+// SecurityDienst Manager Pro – Datenbankschema
+//
+// Zeitkonvention: Alle Schichtzeitpunkte (startAt/endAt) werden als "lokale Wandzeit"
+// (Europe/Berlin) gespeichert und als UTC-Werte ohne Offset interpretiert ("floating time").
+// Dadurch bleiben Schichtlängen, Nacht-/Sonntags-/Feiertagsstunden unabhängig von
+// Sommer-/Winterzeit eindeutig berechenbar. Kalendertage werden als "YYYY-MM-DD" (DATE) geführt.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- Stammdaten
+
+enum Role {
+  ADMIN
+  SUPERVISOR
+  EMPLOYEE
+}
+
+enum EmploymentType {
+  VOLLZEIT
+  TEILZEIT
+  MINIJOB
+}
+
+enum EmployeeStatus {
+  AKTIV
+  INAKTIV
+}
+
+enum Locale {
+  de
+  en
+}
+
+model CompanySettings {
+  id                    Int      @id @default(1)
+  companyName           String   @default("SecurityDienst GmbH")
+  address               String   @default("")
+  phone                 String   @default("")
+  email                 String   @default("")
+  logoDataUrl           String?  // Base64-Data-URL (PNG/JPEG), wird in PDFs verwendet
+  bundesland            String   @default("BE") // für Feiertage (ISO-Kürzel ohne "DE-")
+  minRestHours          Int      @default(11)   // §5 ArbZG
+  maxConsecutiveDays    Int      @default(6)
+  maxDailyHours         Int      @default(10)   // §3 ArbZG
+  nightStart            String   @default("23:00") // Nachtzeit §2 Abs. 3 ArbZG (konfigurierbar, z. B. 20:00 für §3b EStG)
+  nightEnd              String   @default("06:00")
+  overtimeTolerance     Float    @default(8)    // zusätzliche Planstunden über Soll, die der Auto-Planer zulässt
+  minijobMaxHours       Float    @default(43)
+  reminderHoursBefore   Int      @default(12)
+  retentionMonthsLogs   Int      @default(24)   // Audit-/E-Mail-Protokolle
+  retentionMonthsNotifications Int @default(12)
+  retentionMonthsSickLeave Int   @default(48)   // Aufbewahrung Krankmeldungen (Lohnunterlagen)
+  datevBeraterNr        String   @default("")
+  datevMandantNr        String   @default("")
+  datevLohnartWorked    String   @default("100")
+  datevLohnartOvertime  String   @default("200")
+  datevLohnartNight     String   @default("300")
+  datevLohnartSunday    String   @default("310")
+  datevLohnartHoliday   String   @default("320")
+  datevLohnartSick      String   @default("400")
+  datevLohnartVacation  String   @default("500")
+  emailSignature        String   @default("Ihre Dienstplanung")
+  updatedAt             DateTime @updatedAt
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  passwordHash   String
+  role           Role      @default(EMPLOYEE)
+  locale         Locale    @default(de)
+  active         Boolean   @default(true)
+  totpSecretEnc  String?   // AES-256-GCM verschlüsselt
+  totpEnabled    Boolean   @default(false)
+  failedLogins   Int       @default(0)
+  lockedUntil    DateTime?
+  lastLoginAt    DateTime?
+  mustChangePassword Boolean @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  employee       Employee?
+  notifications  Notification[]
+  pushSubscriptions PushSubscription[]
+  auditLogs      AuditLog[]
+}
+
+model Employee {
+  id              String          @id @default(cuid())
+  personnelNumber String          @unique
+  firstName       String
+  lastName        String
+  email           String
+  phone           String          @default("")
+  entryDate       DateTime        @db.Date
+  employmentType  EmploymentType  @default(VOLLZEIT)
+  targetHours     Float           @default(160)
+  status          EmployeeStatus  @default(AKTIV)
+  photoDataUrl    String?
+  primaryObjectId String?
+  primaryObject   SecurityObject? @relation("PrimaryObject", fields: [primaryObjectId], references: [id], onDelete: SetNull)
+  allowedShiftCodes String[]      @default(["F", "S", "N"]) // welche Schichtarten der Auto-Planer zuweisen darf
+  availableForReplacement Boolean @default(true)
+  userId          String?         @unique
+  user            User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  anonymizedAt    DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  objectQualifications EmployeeObject[]
+  qualifications  EmployeeQualification[]
+  assignments     Assignment[]
+  absences        Absence[]
+  sickLeaves      SickLeave[]
+  availability    Availability[]
+  offers          ShiftOffer[]
+  rotationMembers RotationMember[]
+  announcementRecipients AnnouncementRecipient[]
+  emailLogs       EmailLog[]
+
+  @@index([status])
+  @@index([lastName, firstName])
+}
+
+model Qualification {
+  id          String  @id @default(cuid())
+  name        String  @unique // z. B. "Sachkundeprüfung §34a GewO", "Ersthelfer", "Brandschutzhelfer"
+  description String  @default("")
+  employees   EmployeeQualification[]
+  requiredBy  ObjectRequiredQualification[]
+}
+
+model EmployeeQualification {
+  employeeId      String
+  qualificationId String
+  validUntil      DateTime? @db.Date
+  employee        Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  qualification   Qualification @relation(fields: [qualificationId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, qualificationId])
+}
+
+// ---------------------------------------------------------------- Objekte
+
+model SecurityObject {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  address        String   @default("")
+  contactPerson  String   @default("")
+  phone          String   @default("")
+  notes          String   @default("")
+  active         Boolean  @default(true)
+  requiredEarly  Int      @default(1)
+  requiredLate   Int      @default(1)
+  requiredNight  Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  primaryEmployees Employee[]  @relation("PrimaryObject")
+  qualifiedEmployees EmployeeObject[]
+  requiredQualifications ObjectRequiredQualification[]
+  assignments    Assignment[]
+  templateItems  TemplateItem[]
+  templates      ShiftTemplate[]
+}
+
+// Mitarbeiter ist für das Objekt eingewiesen / freigegeben
+model EmployeeObject {
+  employeeId String
+  objectId   String
+  employee   Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  object     SecurityObject @relation(fields: [objectId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, objectId])
+}
+
+model ObjectRequiredQualification {
+  objectId        String
+  qualificationId String
+  object          SecurityObject @relation(fields: [objectId], references: [id], onDelete: Cascade)
+  qualification   Qualification  @relation(fields: [qualificationId], references: [id], onDelete: Cascade)
+
+  @@id([objectId, qualificationId])
+}
+
+// ---------------------------------------------------------------- Schichten
+
+model ShiftType {
+  id           String  @id @default(cuid())
+  code         String  @unique // F, S, N (weitere möglich)
+  nameDe       String
+  nameEn       String
+  color        String  // Hex
+  startTime    String  // "HH:MM"
+  endTime      String  // "HH:MM" (< startTime => über Mitternacht)
+  breakMinutes Int     @default(0)
+  sortOrder    Int     @default(0)
+  active       Boolean @default(true)
+  assignments  Assignment[]
+  templateItems TemplateItem[]
+}
+
+enum AssignmentStatus {
+  PLANNED   // geplant / aktiv
+  SICK      // K – krank, nicht gearbeitet (Entgeltfortzahlung)
+  ABSENT    // FT – unentschuldigter Fehltag
+  VACATION  // U – Urlaub statt Dienst
+  CANCELLED // gestrichen (nicht stundenrelevant)
+}
+
+enum AttendanceStatus {
+  PENDING
+  CONFIRMED
+  NO_SHOW
+}
+
+enum AssignmentSource {
+  MANUAL
+  GENERATED
+  COPY
+  REPLACEMENT
+}
+
+// Eine Schichtbesetzung. employeeId = null => offene (unbesetzte) Schicht
+model Assignment {
+  id             String           @id @default(cuid())
+  date           DateTime         @db.Date
+  shiftTypeId    String
+  shiftType      ShiftType        @relation(fields: [shiftTypeId], references: [id])
+  objectId       String
+  object         SecurityObject   @relation(fields: [objectId], references: [id])
+  employeeId     String?
+  employee       Employee?        @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  startAt        DateTime         // floating local time
+  endAt          DateTime
+  breakMinutes   Int              @default(0)
+  status         AssignmentStatus @default(PLANNED)
+  attendance     AttendanceStatus @default(PENDING)
+  actualStartAt  DateTime?
+  actualEndAt    DateTime?
+  attendanceConfirmedById String?
+  attendanceConfirmedAt DateTime?
+  source         AssignmentSource @default(MANUAL)
+  isDraft        Boolean          @default(false) // vom Auto-Planer erzeugt, noch nicht freigegeben
+  isChanged      Boolean          @default(false) // ÄNDERUNG nach Veröffentlichung -> rote Markierung
+  changeNote     String?
+  replacesAssignmentId String?    @unique
+  replacesAssignment   Assignment? @relation("Replacement", fields: [replacesAssignmentId], references: [id], onDelete: SetNull)
+  replacedBy     Assignment?      @relation("Replacement")
+  sickLeaveId    String?
+  sickLeave      SickLeave?       @relation(fields: [sickLeaveId], references: [id], onDelete: SetNull)
+  reminderSentAt DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  offers         ShiftOffer[]
+  changes        ScheduleChange[]
+  changeRequests ChangeRequest[]
+
+  @@index([date])
+  @@index([employeeId, date])
+  @@index([objectId, date])
+}
+
+// Ganztägige Abwesenheiten ohne konkrete Schicht (Urlaub, Krank an freien Tagen, Fehltag, Wunschfrei)
+enum AbsenceType {
+  VACATION
+  SICK
+  UNEXCUSED
+  DAY_OFF
+}
+
+model Absence {
+  id         String      @id @default(cuid())
+  employeeId String
+  employee   Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date       DateTime    @db.Date
+  type       AbsenceType
+  hours      Float       @default(0) // bezahlte Stunden (Urlaub); Krank ohne geplanten Dienst = 0 (Lohnausfallprinzip)
+  note       String      @default("")
+  sickLeaveId String?
+  sickLeave  SickLeave?  @relation(fields: [sickLeaveId], references: [id], onDelete: Cascade)
+  createdById String?
+  createdAt  DateTime    @default(now())
+
+  @@unique([employeeId, date, type])
+  @@index([date])
+}
+
+// Verfügbarkeit (vom Mitarbeiter oder Admin gepflegt)
+enum AvailabilityType {
+  UNAVAILABLE
+  PREFERRED_OFF
+  AVAILABLE
+}
+
+model Availability {
+  id          String           @id @default(cuid())
+  employeeId  String
+  employee    Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date        DateTime         @db.Date
+  type        AvailabilityType
+  shiftCode   String?          // null = ganzer Tag
+  note        String           @default("")
+  createdAt   DateTime         @default(now())
+
+  @@unique([employeeId, date, type])
+  @@index([date])
+}
+
+// Krankmeldung – KEINE Diagnosen speichern (DSGVO Art. 9)
+model SickLeave {
+  id            String    @id @default(cuid())
+  employeeId    String
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  fromDate      DateTime  @db.Date
+  toDate        DateTime  @db.Date
+  certificate   Boolean   @default(false) // AU-Bescheinigung liegt vor
+  note          String    @default("")    // organisatorische Notiz, keine Diagnose
+  confirmed     Boolean   @default(true)  // von Mitarbeiter gemeldete Krankmeldungen müssen bestätigt werden
+  revokedAt     DateTime?
+  reportedById  String?
+  createdAt     DateTime  @default(now())
+  assignments   Assignment[]
+  absences      Absence[]
+
+  @@index([fromDate, toDate])
+}
+
+// ---------------------------------------------------------------- Monatsplan / Veröffentlichung
+
+enum PlanStatus {
+  DRAFT
+  PENDING_APPROVAL // Auto-Planer-Ergebnis wartet auf Freigabe
+  APPROVED
+  PUBLISHED
+}
+
+model MonthPlan {
+  id           String     @id @default(cuid())
+  year         Int
+  month        Int        // 1-12
+  status       PlanStatus @default(DRAFT)
+  version      Int        @default(0)
+  publishedAt  DateTime?
+  publishedById String?
+  approvedAt   DateTime?
+  approvedById String?
+  archived     Boolean    @default(false)
+  generationReport Json?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  versions     PlanVersion[]
+
+  @@unique([year, month])
+}
+
+model PlanVersion {
+  id          String    @id @default(cuid())
+  monthPlanId String
+  monthPlan   MonthPlan @relation(fields: [monthPlanId], references: [id], onDelete: Cascade)
+  version     Int
+  reason      String
+  snapshot    Json
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([monthPlanId, version])
+}
+
+// ---------------------------------------------------------------- Muster-Dienstplan
+
+enum TemplateType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  ROTATION
+}
+
+model ShiftTemplate {
+  id          String       @id @default(cuid())
+  name        String
+  type        TemplateType
+  description String       @default("")
+  objectId    String?      // Standardobjekt (Rotation)
+  object      SecurityObject? @relation(fields: [objectId], references: [id], onDelete: SetNull)
+  rotationPattern String[] @default([]) // z. B. ["F","F","S","S","N","N","FREI","FREI"]
+  rotationStart   DateTime? @db.Date
+  skipHolidays Boolean     @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  items       TemplateItem[]
+  members     RotationMember[]
+}
+
+model TemplateItem {
+  id            String        @id @default(cuid())
+  templateId    String
+  template      ShiftTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  dayKey        Int           @default(0) // DAILY: 0; WEEKLY: 1=Mo..7=So; MONTHLY: 1..31
+  shiftTypeId   String
+  shiftType     ShiftType     @relation(fields: [shiftTypeId], references: [id], onDelete: Cascade)
+  objectId      String
+  object        SecurityObject @relation(fields: [objectId], references: [id], onDelete: Cascade)
+  requiredCount Int           @default(1)
+}
+
+model RotationMember {
+  id         String        @id @default(cuid())
+  templateId String
+  template   ShiftTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  offset     Int           @default(0)
+
+  @@unique([templateId, employeeId])
+}
+
+// ---------------------------------------------------------------- Änderungen / Ersatz
+
+enum ChangeType {
+  CREATED
+  DELETED
+  MODIFIED
+  SICK
+  ABSENT
+  VACATION
+  REPLACEMENT
+  ATTENDANCE
+  RESTORED
+}
+
+enum NotifyStatus {
+  NOT_REQUIRED
+  PENDING
+  SENT
+  PARTIAL
+  FAILED
+}
+
+model ScheduleChange {
+  id                 String       @id @default(cuid())
+  assignmentId       String?
+  assignment         Assignment?  @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  type               ChangeType
+  date               DateTime     @db.Date
+  shiftCode          String
+  shiftName          String
+  objectName         String
+  originalEmployeeId String?
+  originalEmployeeName String?
+  newEmployeeId      String?
+  newEmployeeName    String?
+  originalStartAt    DateTime?
+  originalEndAt      DateTime?
+  newStartAt         DateTime?
+  newEndAt           DateTime?
+  originalHours      Float?
+  reason             String       @default("")
+  changedById        String?
+  changedByName      String?
+  notificationStatus NotifyStatus @default(NOT_REQUIRED)
+  createdAt          DateTime     @default(now())
+
+  @@index([date])
+  @@index([createdAt])
+}
+
+enum OfferStatus {
+  OFFERED
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  ASSIGNED
+}
+
+// "DIENST ANBIETEN" – Mitarbeiter kann annehmen/ablehnen; Admin weist danach zu
+model ShiftOffer {
+  id           String      @id @default(cuid())
+  assignmentId String
+  assignment   Assignment  @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  employeeId   String
+  employee     Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  status       OfferStatus @default(OFFERED)
+  offeredById  String?
+  message      String      @default("")
+  respondedAt  DateTime?
+  createdAt    DateTime    @default(now())
+
+  @@unique([assignmentId, employeeId])
+}
+
+enum RequestStatus {
+  OPEN
+  APPROVED
+  REJECTED
+}
+
+// Änderungswunsch (Schichtleiter/Mitarbeiter)
+model ChangeRequest {
+  id            String        @id @default(cuid())
+  assignmentId  String?
+  assignment    Assignment?   @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  requestedById String
+  requestedByName String
+  message       String
+  status        RequestStatus @default(OPEN)
+  decidedById   String?
+  decidedAt     DateTime?
+  decisionNote  String        @default("")
+  createdAt     DateTime      @default(now())
+}
+
+// ---------------------------------------------------------------- Kommunikation
+
+enum Priority {
+  NORMAL
+  WICHTIG
+  DRINGEND
+}
+
+enum Channel {
+  EMAIL
+  APP
+  BOTH
+}
+
+enum RecipientMode {
+  ALL
+  SHIFT_F
+  SHIFT_S
+  SHIFT_N
+  SELECTED
+}
+
+enum AnnouncementStatus {
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+}
+
+model Announcement {
+  id             String             @id @default(cuid())
+  subject        String
+  message        String
+  priority       Priority           @default(NORMAL)
+  channel        Channel            @default(BOTH)
+  recipientMode  RecipientMode
+  dateFrom       DateTime?          @db.Date
+  dateTo         DateTime?          @db.Date
+  objectId       String?
+  selectedEmployeeIds String[]      @default([])
+  requireAck     Boolean            @default(false)
+  scheduledAt    DateTime?
+  status         AnnouncementStatus @default(SCHEDULED)
+  sentAt         DateTime?
+  createdById    String
+  createdByName  String
+  createdAt      DateTime           @default(now())
+  recipients     AnnouncementRecipient[]
+}
+
+model AnnouncementRecipient {
+  id             String       @id @default(cuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  employeeId     String
+  employee       Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  emailStatus    NotifyStatus @default(NOT_REQUIRED)
+  appNotified    Boolean      @default(false)
+  openedAt       DateTime?
+  acknowledgedAt DateTime?
+
+  @@unique([announcementId, employeeId])
+}
+
+enum NotificationType {
+  SCHEDULE_PUBLISHED
+  SCHEDULE_CHANGED
+  ANNOUNCEMENT
+  URGENT_ANNOUNCEMENT
+  SHIFT_REMINDER
+  SHIFT_OFFER
+  SHIFT_TAKEOVER
+  SCHEDULE_UPDATED
+  SICK_REPORTED
+  REQUEST
+  SYSTEM
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+}
+
+enum EmailStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+model DispatchBatch {
+  id          String   @id @default(cuid())
+  kind        String   // SCHEDULE | ANNOUNCEMENT | CHANGE
+  label       String
+  year        Int?
+  month       Int?
+  createdById String?
+  createdAt   DateTime @default(now())
+  emails      EmailLog[]
+}
+
+model EmailLog {
+  id          String      @id @default(cuid())
+  batchId     String?
+  batch       DispatchBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  employeeId  String?
+  employee    Employee?   @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  to          String
+  subject     String
+  html        String
+  text        String
+  attachmentName String?
+  attachment  Bytes?
+  status      EmailStatus @default(QUEUED)
+  attempts    Int         @default(0)
+  lastError   String?
+  providerId  String?
+  nextRetryAt DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime    @default(now())
+
+  @@index([status, nextRetryAt])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------- Protokoll
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  details   Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entity, entityId])
+}

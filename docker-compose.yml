@@ -1,0 +1,54 @@
+# Lokaler/Server-Betrieb: docker compose up -d
+# Produktiv: vor die App einen TLS-Reverse-Proxy (Caddy/Traefik/nginx) setzen – siehe README.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sdm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sdm-change-me}
+      POSTGRES_DB: sdm
+    volumes: [dbdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sdm"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://sdm:${POSTGRES_PASSWORD:-sdm-change-me}@db:5432/sdm?schema=public
+    ports: ["3000:3000"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  worker:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      APP_INTERNAL_URL: http://app:3000
+    command: ["node", "-e", "setInterval(()=>fetch('http://app:3000/api/cron',{method:'POST',headers:{Authorization:'Bearer '+process.env.CRON_SECRET}}).then(r=>r.text()).then(t=>console.log(new Date().toISOString(),t)).catch(e=>console.error(e.message)),60000)"]
+    depends_on: [app]
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-sdm-change-me}
+    volumes: [./backups:/backups]
+    # tägliche Sicherung, 30 Tage Aufbewahrung
+    entrypoint: ["sh", "-c", "while true; do pg_dump -h db -U sdm sdm | gzip -9 > /backups/sdm_$$(date +%F_%H%M).sql.gz; find /backups -name 'sdm_*.sql.gz' -mtime +30 -delete; sleep 86400; done"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  # Nur für Tests: fängt alle E-Mails ab (Web-UI http://localhost:8025). SMTP_HOST=mailpit, SMTP_PORT=1025
+  mailpit:
+    image: axllent/mailpit:v1.20
+    profiles: ["dev"]
+    ports: ["8025:8025", "1025:1025"]
+
+volumes:
+  dbdata:
